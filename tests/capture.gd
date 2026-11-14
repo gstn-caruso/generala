@@ -33,6 +33,14 @@ func _run() -> void:
 	await create_timer(0.3).timeout
 	await RenderingServer.frame_post_draw
 	root.get_texture().get_image().save_png("/tmp/generala-cuatro.png")
+	var four_names: Array[String] = ["Gastón", "Martina", "Jugador 3", "Jugador 4"]
+	main._start_game(four_names, false)
+	main.game.record_roll(values)
+	main._reset_dice_display()
+	main._refresh()
+	await create_timer(0.3).timeout
+	await RenderingServer.frame_post_draw
+	root.get_texture().get_image().save_png("/tmp/generala-planilla-cuatro.png")
 	print("Capturas guardadas en /tmp/generala-{menu,juego,reglas,cuatro}.png")
 	main.queue_free()
 	await process_frame

@@ -46,18 +46,32 @@ func _run() -> void:
 	root.push_input(click, true)
 	await process_frame
 	check(main.game.held[0], "El clic en el dado 3D no conserva el dado")
+	check(main.dice[0].position.z < -4.0 and main.dice[0].position.y > 0.8, "El dado conservado no se mueve a los espacios superiores")
 	var held_value: int = main.game.dice[0]
 	var held_position: Vector3 = main.dice[0].position
-	main._roll()
+	click = InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.position = main.camera.unproject_position(main._cup.global_position)
+	click.pressed = true
+	root.push_input(click, true)
+	click = click.duplicate()
+	click.pressed = false
+	root.push_input(click, true)
+	check(main._rolling, "El clic en el cubilete no inicia la siguiente tirada")
 	await _wait_for_roll(main)
 	check(main.game.rolls_used == 2, "La segunda tirada no se registró")
 	check(main.game.dice[0] == held_value, "Se alteró el valor conservado")
 	check(main.dice[0].position.is_equal_approx(held_position), "Se movió el dado conservado")
+	main._toggle_die(0)
+	check(not main.game.held[0] and main.dice[0].position.z > -3.0 and absf(main.dice[0].position.y - 0.505) < 0.01, "El dado liberado no vuelve a la bandeja")
+	main._toggle_die(0)
 	main._roll()
 	await _wait_for_roll(main)
 	check(main.game.rolls_used == 3 and main.roll_button.disabled, "No se respeta el límite de tiradas")
-	for die in main.dice:
-		check(die.freeze and die.top_alignment() > 0.99 and absf(die.position.y - 0.505) < 0.01, "Dado final inestable")
+	for i in range(5):
+		var die = main.dice[i]
+		var expected_height: float = 0.92 if main.game.held[i] else 0.505
+		check(die.freeze and die.top_alignment() > 0.99 and absf(die.position.y - expected_height) < 0.01, "Dado final inestable")
 	for category in range(10):
 		if main.game.preview(category) == 0:
 			main._request_score(category)

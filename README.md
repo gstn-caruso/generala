@@ -6,8 +6,6 @@
 
 Juego de Generala 3D en **Godot 4.6 o superior**, con interfaz en español rioplatense y modelos de **KayKit: Board Game Bits**. Dados con física real sobre una bandeja de paño, partidas locales de 1 a 4 personas, planilla interactiva, efectos de sonido y guardado automático. Probado con Godot 4.7.2 en Linux.
 
-![Una partida de Generala](docs/captura.png)
-
 ## Jugar
 
 Descargá el ZIP de **Linux x86_64** desde [Releases](https://github.com/gstn-caruso/generala/releases/latest), extraelo y ejecutá `generala.x86_64`. No requiere instalar Godot. El ZIP incluye controles, créditos, licencias y versión. Necesita OpenGL 3.3 o superior.

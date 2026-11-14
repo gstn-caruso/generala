@@ -1,7 +1,7 @@
 shader_type spatial;
 render_mode diffuse_burley;
 
-uniform vec4 felt_color : source_color = vec4(0.025, 0.16, 0.105, 1.0);
+uniform vec4 felt_color : source_color = vec4(0.27, 0.025, 0.045, 1.0);
 
 float hash(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
