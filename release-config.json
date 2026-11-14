@@ -3,7 +3,8 @@
   "slug": "generala",
   "initial_version": "0.1.0",
   "godot_version": "4.7.2",
-  "export_preset": "Linux",
+  "release_on_each_merge": true,
+  "build_groups": ["linux-x86_64", "linux-arm64", "windows-x86_64", "windows-arm64", "macos"],
   "tests": [
     "tests/test_game.gd",
     "tests/test_scene.gd"

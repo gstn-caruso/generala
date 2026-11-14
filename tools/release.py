@@ -25,7 +25,7 @@ def change_type(message):
 
 def next_version(previous, messages, initial="0.1.0"):
     changes = [change_type(message) for message in messages]
-    if not any(changes):
+    if not messages:
         return ""
     if not previous:
         return initial
@@ -65,13 +65,16 @@ def main():
     build = Path("build")
     build.mkdir(exist_ok=True)
     lines = [f"# {config['title']} v{build_version}", "", "## Cambios", ""]
-    lines.extend(f"- {message.splitlines()[0]}" for message in reversed(messages) if change_type(message))
+    lines.extend(f"- {message.splitlines()[0]}" for message in reversed(messages))
     lines += ["", "## Descargar y jugar", "",
-        "Linux x86_64: extraé el ZIP y ejecutá `generala.x86_64`. No hace falta instalar Godot.",
-        "", "Los controles, créditos y licencias están incluidos en el ZIP. Necesita OpenGL 3.3 o superior.",
-        "", "Para verificar la descarga: `sha256sum -c SHA256SUMS.txt`.", "",
+        "- Linux x64 y ARM64: paquetes `.deb` y `.rpm`, AppImage y archivos portables.",
+        "- Windows: `.exe` autónomos y ZIP para x64, 32 bits y ARM64. Elegí x64 para una PC Intel/AMD actual.",
+        "- macOS: app universal Intel + Apple Silicon en ZIP y DMG, con firma ad hoc gratuita, sin notarización de Apple.",
+        "- Web: ZIP para servir por HTTP, compatible con WebGL 2.0 y WebAssembly.",
+        "", "No hace falta instalar Godot. Los paquetes incluyen controles y licencias. Los builds de escritorio usan OpenGL 3.3 o superior.",
+        "", "`SHA256SUMS.txt` incluye todos los archivos. Para verificar los descargados: `sha256sum --ignore-missing -c SHA256SUMS.txt`.", "",
         config.get("summary", ""), "",
-        "Código: MIT. Los assets KayKit, las fuentes y el motor conservan sus licencias; ver `THIRD_PARTY_NOTICES.md`.", ""]
+        f"Código: MIT. [Avisos y licencias completos](https://github.com/gstn-caruso/generala/tree/v{build_version}/licenses). [Godot Engine](https://godotengine.org/license/). Los ZIP y paquetes instalables incluyen los textos completos.", ""]
     (build / "release-notes.md").write_text("\n".join(lines))
     print(f"Release version: {version or 'none (no releasable changes)'}")
     if args.github_output:
