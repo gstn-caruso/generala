@@ -4,9 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/gstn-caruso/generala)](https://github.com/gstn-caruso/generala/releases/latest)
 [![MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-Juego de Generala 3D en **Godot 4.6 o superior**, con interfaz en español rioplatense y modelos de **KayKit: Board Game Bits**. Mesa de madera, planilla de papel a la izquierda y bandeja metálica con paño rojo, inspiradas en la composición de Yacht Dice en Nintendo Switch. Partidas locales de 1 a 4 personas, dados físicos, efectos de sonido y guardado automático. Probado con Godot 4.7.2 en Linux.
-
-![Una partida de Generala](docs/captura.png)
+Juego de Generala 3D en **Godot 4.6 o superior**, con interfaz en español rioplatense y modelos de **KayKit: Board Game Bits**. Dados con física real sobre una bandeja de paño, partidas locales de 1 a 4 personas, planilla interactiva, efectos de sonido y guardado automático. Probado con Godot 4.7.2 en Linux.
 
 ## Jugar
 
@@ -40,14 +38,14 @@ Podés elegir otro ejecutable con `GODOT_BIN=/ruta/a/godot ./jugar.sh`.
 
 | Acción | Control |
 | --- | --- |
-| Tirar o volver a tirar | Clic en el cubilete, botón **Tirar dados** o **Espacio** |
+| Tirar o volver a tirar | Botón dorado o **Espacio** |
 | Conservar / liberar un dado | Clic sobre el dado 3D, su botón, o teclas **1–5** |
 | Anotar y pasar el turno | Clic en una categoría libre de la planilla |
 | Abrir o cerrar el menú | **Esc** |
 | Ver las reglas | **F1** o **Cómo jugar** |
 | Silenciar / activar sonido | **M** o botón de sonido |
 
-Al conservar un dado, se mueve a uno de los cinco espacios superiores de la bandeja y se marca con un aro dorado. Podés devolverlo a la zona de tirada con otro clic, con el número debajo de su espacio o con las teclas **1–5**. La columna amarilla identifica al jugador activo; los números azules anticipan los puntos posibles. Tachar una categoría con cero requiere confirmación.
+Los dados conservados se marcan con un aro dorado. Los valores verdes de la planilla anticipan los puntos posibles. Tachar una categoría con cero requiere confirmación.
 
 ## Reglas de esta mesa
 
@@ -71,19 +69,16 @@ El progreso se guarda después de cada tirada, selección y anotación. Al cerra
 scenes/main.tscn       Escena de entrada
 scripts/main.gd       Mesa, interfaz, audio y persistencia
 scripts/die.gd        Modelo KayKit, física y detección de caras
-scripts/tabletop_ui.gd Planilla de papel, preparación y controles de la mesa
-scripts/dice_icon.gd   Iconos vectoriales de dados para la planilla
 scripts/game.gd       Turnos, categorías, jugadores y validación del guardado
 scripts/rules.gd      Reglas puras de puntaje
 shaders/felt.gdshader  Material de paño procedural
-shaders/wood.gdshader  Material de madera procedural
 assets/               Tipografías, icono y sonidos originales
 assets/kaykit/        Modelos glTF, textura compartida y licencia CC0
 tests/                Pruebas de reglas e integración 3D
 tools/                Instalador y generador de audio
 ```
 
-La escena instancia los modelos glTF de KayKit: dados `D6_B` y bandeja `container_B`, adaptada con material metálico. El paño rojo, la mesa de madera, el cubilete, el lápiz y la interfaz se construyen por código. Los modelos y su textura ya están incluidos en `assets/kaykit/`; no hay descargas adicionales al jugar. Las referencias visuales consultadas están en [docs/referencias-interfaz.md](docs/referencias-interfaz.md).
+La escena instancia los modelos glTF de KayKit: dados `D6_B`, bandeja `container_B`, fichas de cuatro colores, monedas y reloj de arena. El paño y la interfaz se construyen por código. Los modelos y su textura ya están incluidos en `assets/kaykit/`; no hay descargas adicionales al jugar.
 
 Las caras opuestas de los dados suman siete. La lectura del resultado respeta la orientación original del modelo: −Y=1, +X=2, +Z=3, −Z=4, −X=5, +Y=6. El modelo de 0,75 unidades se escala a una unidad para coincidir con el cuerpo físico. Al detenerse, cada dado se alinea con su cara superior para resolver apoyos en una arista. La tirada tiene un límite de siete segundos para evitar bloqueos de la simulación.
 
