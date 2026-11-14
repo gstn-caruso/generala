@@ -10,7 +10,10 @@ from release import HEADER, change_type, next_version
 class ReleasePolicyTests(unittest.TestCase):
     def test_initial_release_and_non_product_changes(self):
         self.assertEqual(next_version("", ["feat: initial game"]), "0.1.0")
-        self.assertEqual(next_version("v0.1.0", ["docs: clarify controls", "ci: update runner"]), "")
+        self.assertEqual(next_version("v0.1.0", ["docs: clarify controls", "ci: update runner"]), "0.1.1")
+        self.assertEqual(next_version("v0.1.0", []), "")
+        for kind in ["docs", "ci", "test", "build", "chore", "refactor", "style"]:
+            self.assertEqual(next_version("v1.2.3", [kind + ": maintenance"]), "1.2.4")
 
     def test_semver_increments(self):
         self.assertEqual(next_version("v0.1.0", ["fix(menu): restore focus"]), "0.1.1")
@@ -55,7 +58,7 @@ class ReleaseRepositoryTests(unittest.TestCase):
             git("tag", "v0.1.0")
             self.assertEqual(plan()["version"], "0.1.0")
             git("commit", "--allow-empty", "-m", "docs: clarify controls")
-            self.assertEqual(plan(), {"version": "", "build_version": "0.1.0"})
+            self.assertEqual(plan(), {"version": "0.1.1", "build_version": "0.1.1"})
             git("commit", "--allow-empty", "-m", "fix: preserve held dice")
             self.assertEqual(plan()["version"], "0.1.1")
             git("tag", "v0.1.1")
