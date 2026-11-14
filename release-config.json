@@ -1,0 +1,12 @@
+{
+  "title": "Generala \u00b7 Club de dados",
+  "slug": "generala",
+  "initial_version": "0.1.0",
+  "godot_version": "4.7.2",
+  "export_preset": "Linux",
+  "tests": [
+    "tests/test_game.gd",
+    "tests/test_scene.gd"
+  ],
+  "summary": "Generala 3D local para 1\u20134 jugadores, dados f\u00edsicos KayKit, planilla de puntajes y guardado autom\u00e1tico. Interfaz en espa\u00f1ol."
+}

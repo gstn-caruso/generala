@@ -1,0 +1,7 @@
+* text=auto
+*.sh text eol=lf
+
+# Preserve third-party license documents exactly as distributed upstream.
+assets/fonts/LICENSE-*.txt -text -whitespace
+assets/kaykit/License.txt -text -whitespace
+licenses/* -text -whitespace

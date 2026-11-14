@@ -1,0 +1,12 @@
+.godot/
+build/
+*.tmp
+*.log
+.DS_Store
+__pycache__/
+*.pyc
+KayKit_BoardGameBits_1.0_FREE/
+.venv/
+.env
+.env.*
+export_credentials.cfg
