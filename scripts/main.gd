@@ -4,25 +4,14 @@ extends Node3D
 const Game = preload("res://scripts/game.gd")
 const Rules = preload("res://scripts/rules.gd")
 const Die = preload("res://scripts/die.gd")
+const TabletopUI = preload("res://scripts/tabletop_ui.gd")
 const TRAY: PackedScene = preload("res://assets/kaykit/container_B.gltf")
-const HOURGLASS: PackedScene = preload("res://assets/kaykit/hourglass.gltf")
-const TOKENS: Array[PackedScene] = [
-	preload("res://assets/kaykit/token_green.gltf"),
-	preload("res://assets/kaykit/token_yellow.gltf"),
-	preload("res://assets/kaykit/token_red.gltf"),
-	preload("res://assets/kaykit/token_blue.gltf"),
-]
-const COINS: Array[PackedScene] = [
-	preload("res://assets/kaykit/coin_gold.gltf"),
-	preload("res://assets/kaykit/coin_silver.gltf"),
-]
 const FONT = preload("res://assets/fonts/Lato-Regular.ttf")
 const BOLD = preload("res://assets/fonts/Lato-Bold.ttf")
-const SERIF = preload("res://assets/fonts/DejaVuSerif.ttf")
-const CREAM := Color("f4ebd9")
-const MUTED := Color("94aaa4")
-const GOLD := Color("e3b76d")
-const GREEN := Color("8cd8b0")
+const CREAM := Color("383d3d")
+const MUTED := Color("858b87")
+const GOLD := Color("edc94b")
+const GREEN := Color("57768b")
 const SAVE_PATH := "user://partida.json"
 const SETTINGS_PATH := "user://preferencias.cfg"
 
@@ -58,6 +47,9 @@ var _collision_cooldown: float = 0.0
 var _test_mode: bool = false
 var _exiting: bool = false
 var _save_path: String = SAVE_PATH
+var _die_rest_positions: Array[Vector3] = []
+var _cup: Node3D
+var _cup_tween: Tween
 
 func _ready() -> void:
 	_test_mode = OS.get_cmdline_user_args().has("--test-mode")
@@ -110,11 +102,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		var origin := camera.project_ray_origin(event.position)
 		var end := origin + camera.project_ray_normal(event.position) * 100.0
-		# Only dice are pickable; the invisible retaining walls are on layer 1.
-		var query := PhysicsRayQueryParameters3D.create(origin, end, 2)
+		# Dice use layer 2 and the cup uses layer 4; retaining walls use layer 1.
+		var query := PhysicsRayQueryParameters3D.create(origin, end, 6)
+		query.collide_with_areas = true
 		var hit := get_world_3d().direct_space_state.intersect_ray(query)
 		if not hit.is_empty() and hit.collider is GeneralaDie:
 			_toggle_die(hit.collider.die_index)
+		elif not hit.is_empty() and hit.collider is Area3D and hit.collider.name == "CupHitbox":
+			_roll()
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
@@ -130,33 +125,44 @@ func _build_world() -> void:
 	environment.background_mode = Environment.BG_COLOR
 	environment.background_color = Color("0c171b")
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	environment.ambient_light_color = Color("c6ded3")
+	environment.ambient_light_color = Color("e6e1d8")
 	environment.ambient_light_energy = 0.4
 	environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	environment_node.environment = environment
 	add_child(environment_node)
 	var key := DirectionalLight3D.new()
 	key.rotation_degrees = Vector3(-58, -35, 0)
-	key.light_color = Color("fff0d2")
+	key.light_color = Color("fff5e4")
 	key.light_energy = 1.0
 	key.shadow_enabled = true
 	key.directional_shadow_max_distance = 40.0
 	add_child(key)
 	var fill := OmniLight3D.new()
 	fill.position = Vector3(-4, 7, -3)
-	fill.light_color = Color("a4dbcf")
+	fill.light_color = Color("e6e9ed")
 	fill.light_energy = 0.8
 	fill.omni_range = 15
 	add_child(fill)
 	camera = Camera3D.new()
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	camera.size = 14.2
-	camera.v_offset = 1.0
-	camera.position = Vector3(3.25, 15.5, 12.5)
+	camera.v_offset = 0.2
+	camera.position = Vector3(-3.8, 18, 7.4)
 	add_child(camera)
-	camera.look_at(Vector3(3.25, 0, 0))
+	camera.look_at(Vector3(-3.8, 0, 0))
 	camera.current = true
-	_add_asset(TRAY, "BandejaKayKit", Vector3(0, -0.08, 0), Vector3(3.97, 0.8, 2.07))
+	var wood := ShaderMaterial.new()
+	wood.shader = preload("res://shaders/wood.gdshader")
+	_mesh_box(Vector3(44, 0.2, 32), Vector3(0, -0.21, 0), wood)
+	var outer_tray := _add_asset(TRAY, "BordeKayKit", Vector3(0, -0.10, 0), Vector3(3.56, 0.72, 3.36))
+	_paint_asset(outer_tray, _material(Color("a0a9ab"), 0.28, 0.72))
+	var tray := _add_asset(TRAY, "BandejaKayKit", Vector3(0, -0.08, 0), Vector3(3.45, 0.8, 3.25))
+	_paint_asset(tray, _material(Color("424d52"), 0.44, 0.38))
+	for ridge in range(3):
+		var rim := MeshInstance3D.new()
+		rim.mesh = _rim_mesh(Vector2(5.32 + ridge * 0.23, 5.02 + ridge * 0.23))
+		rim.material_override = _material(Color("a1a9aa") if ridge != 1 else Color("606b6f"), 0.31, 0.55)
+		add_child(rim)
 	var felt := ShaderMaterial.new()
 	felt.shader = preload("res://shaders/felt.gdshader")
 	var felt_surface := MeshInstance3D.new()
@@ -164,14 +170,17 @@ func _build_world() -> void:
 	felt_surface.mesh = _felt_mesh()
 	felt_surface.material_override = felt
 	add_child(felt_surface)
-	_static_box(Vector3(11.1, 0.4, 5.8), Vector3(0, -0.2, 0))
+	_static_box(Vector3(9.66, 0.4, 9.10), Vector3(0, -0.2, 0))
 	for side in [-1.0, 1.0]:
 		# Invisible walls protect every throw without hiding the board.
-		_static_box(Vector3(0.4, 5, 6.6), Vector3(side * 5.6, 2, 0))
-		_static_box(Vector3(11.5, 5, 0.4), Vector3(0, 2, side * 2.8))
-	_table_text("G E N E R A L A", Vector3(0, 0.016, -2.15), 58, Color("718c68"))
-	_table_text("C L U B   D E   D A D O S", Vector3(0, 0.018, -1.63), 23, Color("658564"))
-	_table_text("U N A   M Á S   Y   N O S   V A M O S", Vector3(0, 0.018, 2.5), 18, Color("658564"))
+		_static_box(Vector3(0.4, 5, 9.3), Vector3(side * 4.88, 2, 0))
+	_static_box(Vector3(10.0, 5, 0.35), Vector3(0, 2, -3.3))
+	_static_box(Vector3(10.0, 5, 0.35), Vector3(0, 2, 4.55))
+	# Five physical pockets visibly separate kept dice from the next throw.
+	for i in range(5):
+		var location := _held_position(i)
+		_mesh_box(Vector3(1.62, 0.14, 1.4), Vector3(location.x, 0.32, location.z), _material(Color("738083"), 0.4, 0.45))
+		_mesh_box(Vector3(1.43, 0.025, 1.2), Vector3(location.x, 0.401, location.z), _material(Color("303a3d"), 0.8))
 	for i in range(5):
 		var die := Die.new()
 		die.die_index = i
@@ -179,6 +188,7 @@ func _build_world() -> void:
 		add_child(die)
 		die.body_entered.connect(_on_die_collision.bind(die))
 		dice.append(die)
+		_die_rest_positions.append(Vector3((i - 2) * 1.5, 0.505, 0.8))
 		var ring := MeshInstance3D.new()
 		var torus := TorusMesh.new()
 		torus.inner_radius = 0.66
@@ -193,15 +203,116 @@ func _build_world() -> void:
 		ring.visible = false
 		add_child(ring)
 		rings.append(ring)
-	# Keep accessories on the tray rim, outside the playable physics area.
-	for stack in range(TOKENS.size()):
-		for chip in range(3 + stack):
-			_add_asset(TOKENS[stack], "FichasKayKit%d_%d" % [stack, chip],
-				Vector3(-6.2, 0.34 + chip * 0.058, -0.55 + stack * 0.72), Vector3.ONE * 0.55, chip * 0.28)
-	for i in range(COINS.size()):
-		_add_asset(COINS[i], "MonedaKayKit%d" % i,
-			Vector3(-4.85 + i * 0.76, 0.34, 3.1), Vector3.ONE * 0.58, i * 0.3)
-	_add_asset(HOURGLASS, "RelojKayKit", Vector3(6.2, 0.34, -1.75), Vector3.ONE * 0.5, 0.2)
+	_build_cup()
+	_build_pencil()
+
+func _held_position(index: int) -> Vector3:
+	return Vector3((index - 2) * 1.8, 0.92, -4.48)
+
+func _rim_mesh(half_size: Vector2) -> ArrayMesh:
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var ring: Array[Vector2] = []
+	for corner in range(4):
+		var signs := Vector2(1.0 if corner == 0 or corner == 3 else -1.0, 1.0 if corner < 2 else -1.0)
+		var center := (half_size - Vector2.ONE * 1.05) * signs
+		for step in range(13):
+			var angle: float = corner * PI / 2.0 + step * PI / 24.0
+			ring.append(center + Vector2(cos(angle), sin(angle)) * 1.05)
+	for i in range(ring.size()):
+		var next: int = (i + 1) % ring.size()
+		var direction := (ring[next] - ring[i]).normalized()
+		var inward := Vector2(-direction.y, direction.x) * 0.04
+		for point: Vector2 in [ring[i] - inward, ring[next] + inward, ring[i] + inward, ring[i] - inward, ring[next] - inward, ring[next] + inward]:
+			surface.set_normal(Vector3.UP)
+			surface.add_vertex(Vector3(point.x, 0.349, point.y))
+	return surface.commit()
+
+func _paint_asset(asset: Node3D, material: Material) -> void:
+	for mesh: MeshInstance3D in asset.find_children("*", "MeshInstance3D", true, false):
+		mesh.material_override = material
+
+func _mesh_box(dimensions: Vector3, location: Vector3, material: Material) -> MeshInstance3D:
+	var instance := MeshInstance3D.new()
+	var mesh := BoxMesh.new()
+	mesh.size = dimensions
+	instance.mesh = mesh
+	instance.position = location
+	instance.material_override = material
+	add_child(instance)
+	return instance
+
+func _build_cup() -> void:
+	_cup = Node3D.new()
+	_cup.name = "Cubilete"
+	_cup.position = Vector3(6.3, 1.10, 0.9)
+	_cup.rotation.z = 1.22
+	add_child(_cup)
+	var hitbox := Area3D.new()
+	hitbox.name = "CupHitbox"
+	hitbox.collision_layer = 4
+	hitbox.collision_mask = 0
+	var shape := CollisionShape3D.new()
+	var cylinder_shape := CylinderShape3D.new()
+	cylinder_shape.radius = 0.9
+	cylinder_shape.height = 2.1
+	shape.shape = cylinder_shape
+	hitbox.add_child(shape)
+	_cup.add_child(hitbox)
+	var leather := _material(Color("252321"), 0.78)
+	leather.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var lining := _material(Color("361216"), 0.95)
+	lining.cull_mode = BaseMaterial3D.CULL_DISABLED
+	for inner in [false, true]:
+		var body := MeshInstance3D.new()
+		var cylinder := CylinderMesh.new()
+		cylinder.top_radius = 0.79 if inner else 0.88
+		cylinder.bottom_radius = 0.62 if inner else 0.72
+		cylinder.height = 1.94 if inner else 2.10
+		cylinder.cap_top = false
+		cylinder.radial_segments = 64
+		body.mesh = cylinder
+		body.material_override = lining if inner else leather
+		body.position.y = 0.05 if inner else 0.0
+		_cup.add_child(body)
+	var lip := MeshInstance3D.new()
+	var ring := TorusMesh.new()
+	ring.inner_radius = 0.78
+	ring.outer_radius = 0.89
+	ring.rings = 64
+	ring.ring_segments = 12
+	lip.mesh = ring
+	lip.material_override = leather
+	lip.position.y = 1.05
+	_cup.add_child(lip)
+
+func _animate_cup() -> void:
+	if is_instance_valid(_cup_tween):
+		_cup_tween.kill()
+	_cup_tween = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_cup_tween.tween_property(_cup, "position", Vector3(4.9, 2.0, 0.4), 0.22)
+	_cup_tween.parallel().tween_property(_cup, "rotation:z", 1.9, 0.22)
+	_cup_tween.tween_interval(0.22)
+	_cup_tween.tween_property(_cup, "position", Vector3(6.3, 1.1, 0.9), 0.32)
+	_cup_tween.parallel().tween_property(_cup, "rotation:z", 1.22, 0.32)
+
+func _build_pencil() -> void:
+	var pencil := Node3D.new()
+	pencil.name = "Lapiz"
+	pencil.position = Vector3(-7.6, 0.02, 1.2)
+	pencil.rotation_degrees = Vector3(90, 0, -9)
+	add_child(pencil)
+	for piece in range(4):
+		var instance := MeshInstance3D.new()
+		var cylinder := CylinderMesh.new()
+		cylinder.radial_segments = 6 if piece == 0 else 24
+		cylinder.top_radius = 0.0 if piece == 1 else 0.075
+		cylinder.bottom_radius = 0.075
+		cylinder.height = [2.55, 0.35, 0.22, 0.20][piece]
+		instance.mesh = cylinder
+		instance.position.y = [0.0, 1.45, -1.38, -1.59][piece]
+		instance.material_override = _material([Color("dcb237"), Color("b69a73"), Color("9cabb1"), Color("d1c6b6")][piece], 0.7, 0.3 if piece == 2 else 0.0)
+		pencil.add_child(instance)
 
 func _add_asset(scene: PackedScene, asset_name: String, location: Vector3, asset_scale: Vector3, yaw: float = 0.0) -> Node3D:
 	var asset := scene.instantiate() as Node3D
@@ -215,8 +326,8 @@ func _add_asset(scene: PackedScene, asset_name: String, location: Vector3, asset
 func _felt_mesh() -> ArrayMesh:
 	# Follow the rounded floor of KayKit's container without covering its walls.
 	var rim: Array[Vector3] = []
-	var half_size := Vector2(5.54, 2.89)
-	var radius := Vector2(1.08, 0.56)
+	var half_size := Vector2(4.82, 4.54)
+	var radius := Vector2(0.94, 0.88)
 	for corner in range(4):
 		var sign_x: float = 1.0 if corner == 0 or corner == 3 else -1.0
 		var sign_z: float = 1.0 if corner < 2 else -1.0
@@ -233,19 +344,6 @@ func _felt_mesh() -> ArrayMesh:
 			surface.set_uv(Vector2(point.x / (half_size.x * 2.0) + 0.5, point.z / (half_size.y * 2.0) + 0.5))
 			surface.add_vertex(point)
 	return surface.commit()
-
-func _table_text(text: String, position_3d: Vector3, size_3d: int, color: Color) -> void:
-	var label := Label3D.new()
-	label.text = text
-	label.font = BOLD
-	label.font_size = size_3d
-	label.pixel_size = 0.006
-	label.modulate = color
-	label.outline_size = 0
-	label.no_depth_test = false
-	label.position = position_3d
-	label.rotation_degrees.x = -90
-	add_child(label)
 
 func _material(color: Color, roughness: float, metallic: float = 0.0) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
@@ -265,196 +363,31 @@ func _static_box(size_3d: Vector3, position_3d: Vector3) -> void:
 	add_child(body)
 
 func _build_ui() -> void:
-	var layer := CanvasLayer.new()
-	add_child(layer)
-	ui = Control.new()
-	ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var theme := Theme.new()
-	theme.default_font = FONT
-	theme.default_font_size = 16
-	ui.theme = theme
-	layer.add_child(ui)
-	var margin := _margin(32, 25, 32, 24)
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	ui.add_child(margin)
-	var layout := _vbox(22)
-	layout.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	margin.add_child(layout)
-	var top := HBoxContainer.new()
-	top.add_theme_constant_override("separation", 12)
-	top.custom_minimum_size.y = 70
-	layout.add_child(top)
-	var icon := TextureRect.new()
-	icon.texture = preload("res://assets/icon.svg")
-	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.custom_minimum_size = Vector2(48, 48)
-	top.add_child(icon)
-	var brand := _vbox(4)
-	brand.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	brand.add_child(_label("G E N E R A L A", 24, CREAM, BOLD))
-	var build_version := FileAccess.get_file_as_string("res://version.txt").strip_edges()
-	brand.add_child(_label(tr("CLUB DE DADOS  /  EDICIÓN DE SOBREMESA") + "  ·  v" + build_version, 10, MUTED))
-	top.add_child(brand)
-	top.add_child(_spacer())
-	var local_label := _label("●  LOCAL · 1–4 JUGADORES", 11, GREEN, BOLD)
-	local_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	top.add_child(local_label)
-	var gap := Control.new()
-	gap.custom_minimum_size.x = 16
-	top.add_child(gap)
-	sound_button = _button("SONIDO", _toggle_sound)
-	sound_button.tooltip_text = "Activar o silenciar · M"
-	sound_button.custom_minimum_size = Vector2(98, 40)
-	sound_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	top.add_child(sound_button)
-	var help_button := _button("CÓMO JUGAR", _show_help)
-	help_button.custom_minimum_size = Vector2(125, 40)
-	help_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	top.add_child(help_button)
-	menu_button = _button("MENÚ", _show_pause)
-	menu_button.custom_minimum_size = Vector2(80, 40)
-	menu_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	top.add_child(menu_button)
-	layout.add_child(_separator())
-	var content := HBoxContainer.new()
-	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content.add_theme_constant_override("separation", 30)
-	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layout.add_child(content)
-	var stage := _vbox(12)
-	stage.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	content.add_child(stage)
-	var title_margin := _margin(12, 18, 0, 0)
-	title_margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	stage.add_child(title_margin)
-	var titles := _vbox(12)
-	titles.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	title_margin.add_child(titles)
-	eyebrow = _label("", 12, GOLD, BOLD)
-	titles.add_child(eyebrow)
-	heading = _label("", 43, CREAM, SERIF)
-	heading.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	titles.add_child(heading)
-	subtitle = _label("", 16, MUTED)
-	subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	titles.add_child(subtitle)
-	var air := Control.new()
-	air.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	air.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	stage.add_child(air)
-	dice_hint = _label("", 13, CREAM)
-	dice_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	stage.add_child(dice_hint)
-	dice_row = HBoxContainer.new()
-	dice_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	dice_row.add_theme_constant_override("separation", 12)
-	stage.add_child(dice_row)
-	for i in range(5):
-		var button := _button("", _toggle_die.bind(i))
-		button.custom_minimum_size = Vector2(98, 58)
-		button.tooltip_text = "Conservar o liberar dado %d · Tecla %d" % [i + 1, i + 1]
-		dice_row.add_child(button)
-		dice_buttons.append(button)
-	controls = HBoxContainer.new()
-	controls.alignment = BoxContainer.ALIGNMENT_CENTER
-	controls.add_theme_constant_override("separation", 20)
-	stage.add_child(controls)
-	roll_button = _button("", _roll, true)
-	roll_button.custom_minimum_size = Vector2(300, 60)
-	roll_button.add_theme_font_size_override("font_size", 16)
-	controls.add_child(roll_button)
-	roll_counter = _label("", 14, MUTED)
-	roll_counter.custom_minimum_size.x = 160
-	roll_counter.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	controls.add_child(roll_counter)
-	footer = _label("", 11, MUTED)
-	footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	footer.custom_minimum_size.y = 30
-	stage.add_child(footer)
-	sidebar = PanelContainer.new()
-	sidebar.custom_minimum_size.x = 410
-	sidebar.add_theme_stylebox_override("panel", _style(Color("12282a"), Color("314743"), 18))
-	content.add_child(sidebar)
-	sound_button.text = "SILENCIADO" if muted else "SONIDO ON"
+	TabletopUI.build(self)
 
 func _show_home() -> void:
 	_close_dialog()
 	game = null
 	_rolling = false
-	camera.v_offset = 1.0
+	camera.v_offset = 0.2
 	for i in range(5):
-		dice[i].position = Vector3((i - 2) * 1.52, 0.51, 0.25 + sin(i * 1.8) * 0.15)
-		dice[i].show_value([5, 3, 1, 6, 2][i], (i - 2) * 0.12)
+		dice[i].show()
+		dice[i].position = Vector3((i - 2) * 1.5, 0.505, 0.8 + sin(i * 1.8) * 0.12)
+		dice[i].show_value([5, 3, 1, 6, 2][i], (i - 2) * 0.10)
 		rings[i].hide()
-	eyebrow.text = "EL CLÁSICO DE SIEMPRE. OTRA DIMENSIÓN."
-	heading.add_theme_font_size_override("font_size", 43)
-	heading.text = "Cinco dados.\nMil posibilidades."
-	subtitle.text = "Un poco de estrategia. Un poco de suerte. Una más."
+	eyebrow.text = "JUEGO DE DADOS"
+	heading.add_theme_font_size_override("font_size", 23)
+	heading.text = "Generala"
+	subtitle.text = ""
 	dice_hint.text = ""
+	roll_counter.text = "5 dados"
 	dice_row.hide()
 	controls.hide()
-	footer.text = "HECHO PARA COMPARTIR. JUGADO SIN APURO."
 	menu_button.disabled = true
 	_show_setup()
 
 func _show_setup() -> void:
-	_clear_sidebar()
-	var box := _sidebar_box()
-	box.add_child(_label("BIENVENIDO AL CLUB", 11, GOLD, BOLD))
-	box.add_child(_label("Armá la mesa.", 30, CREAM, SERIF))
-	var description := _label("De uno a cuatro jugadores.\nPasen los dados, compartan la suerte.", 15, MUTED)
-	box.add_child(description)
-	box.add_child(_separator())
-	box.add_child(_label("JUGADORES", 11, MUTED, BOLD))
-	var count := OptionButton.new()
-	count.custom_minimum_size.y = 43
-	count.add_theme_stylebox_override("normal", _style(Color("1b3635"), Color("3c5550"), 7))
-	count.add_theme_color_override("font_color", CREAM)
-	for title in ["1  ·  Solitario", "2  ·  Un mano a mano", "3  ·  Mesa de tres", "4  ·  Mesa completa"]:
-		count.add_item(title)
-	count.select(_player_count - 1)
-	count.item_selected.connect(func(index: int) -> void:
-		_player_count = index + 1
-		_show_setup())
-	box.add_child(count)
-	for i in range(_player_count):
-		var line := LineEdit.new()
-		line.text = _player_names[i]
-		line.placeholder_text = "Nombre del jugador %d" % (i + 1)
-		line.max_length = 18
-		line.custom_minimum_size.y = 42
-		line.add_theme_stylebox_override("normal", _style(Color("0e2224"), Color("2d4541"), 7))
-		line.add_theme_stylebox_override("focus", _style(Color("15312e"), GOLD, 7))
-		line.add_theme_color_override("font_color", CREAM)
-		line.text_changed.connect(func(value: String) -> void: _player_names[i] = value)
-		box.add_child(line)
-	var served := CheckBox.new()
-	served.text = "Generala servida gana"
-	served.button_pressed = _served_wins
-	served.add_theme_font_size_override("font_size", 15)
-	served.add_theme_color_override("font_color", CREAM)
-	served.tooltip_text = "Cinco iguales en la primera tirada ganan al instante. Desactivado: siempre vale 50 puntos."
-	served.toggled.connect(func(value: bool) -> void: _served_wins = value)
-	box.add_child(served)
-	var start_button := _button("EMPEZAR PARTIDA   →", _start_from_setup, true)
-	start_button.custom_minimum_size.y = 54
-	box.add_child(start_button)
-	var saved := _read_saved_game()
-	if saved != null and not saved.game_over:
-		var resume := _button("CONTINUAR PARTIDA   ↗", _resume_game)
-		resume.custom_minimum_size.y = 45
-		resume.tooltip_text = "Ronda %d · %s" % [saved.round_number(), ", ".join(saved.names)]
-		box.add_child(resume)
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	box.add_child(spacer)
-	box.add_child(_separator())
-	var record_text := "RÉCORD DE LA MESA   %d PTS" % best_score if best_score > 0 else "10 RONDAS  ·  5 DADOS  ·  HASTA 3 TIRADAS"
-	box.add_child(_label(record_text, 11, MUTED, BOLD))
+	TabletopUI.setup(self)
 
 func _start_from_setup() -> void:
 	var saved := _read_saved_game()
@@ -494,158 +427,66 @@ func _resume_game() -> void:
 
 func _reset_dice_display() -> void:
 	for i in range(5):
-		dice[i].position = Vector3((i - 2) * 1.52, 0.51, 0.2)
-		dice[i].show_value(game.dice[i] if game.dice[i] > 0 else [5, 3, 1, 6, 2][i], randf_range(-0.2, 0.2))
+		_die_rest_positions[i] = Vector3((i - 2) * 1.5, 0.505, 0.8)
+		dice[i].position = _held_position(i) if game.held[i] else _die_rest_positions[i]
+		dice[i].show_value(game.dice[i] if game.dice[i] > 0 else [5, 3, 1, 6, 2][i], 0.0 if game.held[i] else randf_range(-0.15, 0.15))
+		dice[i].visible = game.rolls_used > 0
 
 func _refresh() -> void:
 	if game == null:
 		return
 	menu_button.disabled = _rolling
-	dice_row.show()
+	dice_row.visible = game.rolls_used > 0
 	controls.show()
-	eyebrow.text = "RONDA %02d / 10     ·     MESA LOCAL" % game.round_number()
-	heading.text = "Tu turno, %s." % game.names[game.current_player]
-	heading.add_theme_font_size_override("font_size", 36 if game.names[game.current_player].length() > 12 else 41)
-	subtitle.text = "Hasta tres tiradas. Vos decidís cuándo plantarte."
-	if _rolling:
-		subtitle.text = "Que ruede la suerte…"
-	elif game.rolls_used > 0:
-		subtitle.text = _combination_text()
-	if game.game_over:
-		eyebrow.text = "LA MESA TIENE SU RESULTADO"
-		heading.text = "Bien jugado. ¿Otra más?"
-		subtitle.text = "Cada partida tiene su historia. Gracias por compartir esta mesa."
+	eyebrow.text = "TURNO DE" if not game.game_over else "FIN DE LA PARTIDA"
+	heading.text = game.names[game.current_player] if not game.game_over else "Bien jugado"
+	heading.add_theme_font_size_override("font_size", 23)
+	subtitle.text = _combination_text() if game.rolls_used > 0 and not _rolling else ""
 	for i in range(5):
-		var held := game.held[i]
-		dice_buttons[i].text = "%s   %d\n%s" % ["◆" if held else "·", game.dice[i], "GUARDADO" if held else "LIBRE"] if game.dice[i] > 0 else "—\nDADO %d" % (i + 1)
+		var held: bool = game.held[i]
+		dice_buttons[i].text = str(i + 1)
 		dice_buttons[i].disabled = _rolling or game.rolls_used == 0 or game.rolls_used >= 3 or game.game_over
 		_style_button(dice_buttons[i], held)
+		for state in ["normal", "disabled"]:
+			dice_buttons[i].add_theme_stylebox_override(state, _style(Color.TRANSPARENT, Color.TRANSPARENT, 0))
+		dice_buttons[i].add_theme_color_override("font_color", GOLD if held else Color("e8e8dc"))
+		dice_buttons[i].add_theme_color_override("font_disabled_color", Color("acae9f"))
 		rings[i].visible = held
-		rings[i].position = Vector3(dice[i].position.x, 0.055, dice[i].position.z)
+		rings[i].position = Vector3(dice[i].position.x, 0.425 if held else 0.055, dice[i].position.z)
+	TabletopUI.position_dice_controls(self)
 	if _rolling:
-		dice_hint.text = "Los dados están en el aire…"
+		dice_hint.text = "Tirando los dados…"
 	elif game.rolls_used == 0:
-		dice_hint.text = "Una nueva mano. Todas las posibilidades."
+		dice_hint.text = "Hacé clic en el cubilete o pulsá Espacio para tirar."
 	elif game.rolls_used == 3:
-		dice_hint.text = "Última tirada: elegí una categoría en la planilla."
+		dice_hint.text = "Elegí una casilla de la planilla para anotar."
 	elif game.held.all(func(v: bool) -> bool: return v):
-		dice_hint.text = "Todos guardados. Anotá tu jugada o liberá algún dado."
+		dice_hint.text = "Dados guardados. Podés anotar o devolver alguno a la bandeja."
 	else:
-		dice_hint.text = "Clic en un dado para conservarlo. También podés anotar ahora."
+		dice_hint.text = "Clic en un dado para guardarlo o devolverlo a la bandeja."
 	roll_button.disabled = _rolling or not game.can_roll()
-	roll_button.text = "TIRAR LOS DADOS   →" if game.rolls_used == 0 else "VOLVER A TIRAR   →"
+	roll_button.text = "ESPACIO   Tirar dados" if game.rolls_used == 0 else "ESPACIO   Volver a tirar"
 	if _rolling:
-		roll_button.text = "RODANDO…"
+		roll_button.text = "Tirando…"
 	elif game.game_over:
-		roll_button.text = "VER RESULTADO   →"
+		roll_button.text = "Ver resultado"
 		roll_button.disabled = false
+		dice_hint.text = "La partida terminó. ¿Una más?"
 	elif game.rolls_used >= 3:
-		roll_button.text = "ANOTÁ TU JUGADA   ↗"
-	roll_counter.text = "%s   %d / 3\nTIRADAS USADAS" % ["●".repeat(game.rolls_used) + "○".repeat(3 - game.rolls_used), game.rolls_used]
-	footer.text = "ESPACIO  Tirar     ·     1–5  Conservar dados     ·     ESC  Menú     ·     F1  Reglas"
+		roll_button.text = "Anotá en la planilla"
+	var remaining: int = 3 - game.rolls_used
+	roll_counter.text = "%d %s" % [remaining, "tirada" if remaining == 1 else "tiradas"]
 	_show_scorecard()
 
 func _combination_text() -> String:
 	for category in [9, 8, 7, 6]:
-		var score := Rules.score(game.dice, category, game.rolls_used == 1)
-		if score > 0:
-			var served_suffix := (" servida" if category == 6 or category == 9 else " servido") if game.rolls_used == 1 else ""
-			return "%s%s · %d puntos posibles. Vos elegís." % [Rules.CATEGORIES[category], served_suffix, score]
-	return "Conservá lo que te sirve. La próxima tirada puede cambiar todo."
+		var points: int = Rules.score(game.dice, category, game.rolls_used == 1)
+		if points > 0:
+			return "%s · %d puntos" % [Rules.CATEGORIES[category], points]
+	return ""
 
 func _show_scorecard() -> void:
-	_clear_sidebar()
-	var box := _sidebar_box(6)
-	var title_row := HBoxContainer.new()
-	title_row.add_child(_label("LA PLANILLA", 12, GOLD, BOLD))
-	title_row.add_child(_spacer())
-	title_row.add_child(_label("%02d / 10" % game.round_number(), 12, MUTED))
-	box.add_child(title_row)
-	box.add_child(_label("Cada punto cuenta.", 25, CREAM, SERIF))
-	var caption := _label("Elegí dónde anotar tu jugada.", 13, MUTED)
-	caption.custom_minimum_size.y = 30
-	box.add_child(caption)
-	var names_row := HBoxContainer.new()
-	names_row.add_theme_constant_override("separation", 5)
-	var category_label := _label("CATEGORÍA", 10, MUTED, BOLD)
-	category_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	names_row.add_child(category_label)
-	for player in range(game.names.size()):
-		var name_label := _label(game.names[player].left(7), 11, GOLD if player == game.current_player else MUTED, BOLD)
-		name_label.custom_minimum_size.x = _score_column_width()
-		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		name_label.tooltip_text = game.names[player]
-		names_row.add_child(name_label)
-	box.add_child(names_row)
-	box.add_child(_separator())
-	for category in range(Rules.ROUND_COUNT):
-		if category == 6:
-			box.add_child(_separator())
-		var row := Button.new()
-		row.custom_minimum_size.y = 36
-		row.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		row.tooltip_text = Rules.DESCRIPTIONS[category]
-		var possible := game.preview(category)
-		var selectable := possible >= 0 and not _rolling
-		var base_color := Color("193832") if selectable and possible > 0 else Color("142c2b")
-		row.add_theme_stylebox_override("normal", _style(base_color, Color.TRANSPARENT, 6))
-		row.add_theme_stylebox_override("hover", _style(Color("28493c"), Color("5d7e58"), 6))
-		row.add_theme_stylebox_override("pressed", _style(Color("3c5541"), GOLD, 6))
-		row.add_theme_stylebox_override("disabled", _style(Color("12282a"), Color.TRANSPARENT, 6))
-		row.add_theme_stylebox_override("focus", _style(Color.TRANSPARENT, GOLD, 6))
-		row.disabled = not selectable
-		row.pressed.connect(_request_score.bind(category))
-		var row_margin := _margin(9, 0, 6, 0)
-		row_margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		row_margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var cells := HBoxContainer.new()
-		cells.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		cells.add_theme_constant_override("separation", 5)
-		row_margin.add_child(cells)
-		var category_name := _label(("%d   " % (category + 1) if category < 6 else "") + Rules.CATEGORIES[category], 14, CREAM if game.scores[game.current_player][category] == -1 else MUTED)
-		category_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		category_name.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		cells.add_child(category_name)
-		for player in range(game.names.size()):
-			var points: int = game.scores[player][category]
-			var content := "—"
-			var color := Color("536e65")
-			if points >= 0:
-				content = str(points) if points > 0 else "×"
-				color = CREAM if points > 0 else Color("b77d6e")
-			elif player == game.current_player and selectable:
-				content = "+%d" % possible if possible > 0 else "0"
-				color = GREEN if possible > 0 else Color("7c9690")
-			var cell := _label(content, 15, color, BOLD)
-			cell.custom_minimum_size.x = _score_column_width()
-			cell.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			cell.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-			cells.add_child(cell)
-		row.add_child(row_margin)
-		box.add_child(row)
-	box.add_child(_separator())
-	var totals := HBoxContainer.new()
-	totals.add_theme_constant_override("separation", 5)
-	var total_label := _label("TOTAL", 12, GOLD, BOLD)
-	total_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	total_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	totals.add_child(total_label)
-	for player in range(game.names.size()):
-		var total := _label(str(game.total(player)), 25, GOLD if player == game.current_player else CREAM, BOLD)
-		total.custom_minimum_size.x = _score_column_width()
-		total.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		totals.add_child(total)
-	box.add_child(totals)
-	var spacer := Control.new()
-	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	box.add_child(spacer)
-	var note := _label("Los valores en verde son puntos posibles.\nUn cero tacha la categoría para esta partida.", 12, MUTED)
-	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	box.add_child(note)
-	box.add_child(_label("●  GUARDADO AUTOMÁTICO", 10, Color("648d7d"), BOLD))
-
-func _score_column_width() -> float:
-	return 64.0 if game.names.size() == 1 else 48.0 if game.names.size() == 2 else 43.0
+	TabletopUI.scorecard(self)
 
 func _roll() -> void:
 	if game == null or _rolling or is_instance_valid(dialog):
@@ -659,9 +500,11 @@ func _roll() -> void:
 	_rolling = true
 	_roll_elapsed = 0.0
 	_quiet_time = 0.0
+	_animate_cup()
 	for i in range(5):
 		if not game.held[i]:
-			dice[i].toss(Vector3((i - 2) * 1.7, 2.6 + randf() * 0.8, randf_range(-0.6, 0.6)))
+			dice[i].show()
+			dice[i].toss(Vector3((i - 2) * 1.5, 2.6 + randf() * 0.8, randf_range(-0.6, 0.6)))
 	_play("roll", -5.0)
 	_refresh()
 
@@ -672,8 +515,9 @@ func _finish_roll() -> void:
 		values.append(value)
 		if not game.held[i]:
 			var yaw := dice[i].rotation.y
-			dice[i].position = Vector3(clampf(dice[i].position.x, -4.9, 4.9), 0.505, clampf(dice[i].position.z, -2.1, 2.1))
+			dice[i].position = Vector3(clampf(dice[i].position.x, -4.05, 4.05), 0.505, clampf(dice[i].position.z, -2.4, 3.8))
 			dice[i].show_value(value, yaw)
+			_die_rest_positions[i] = dice[i].position
 	_rolling = false
 	game.record_roll(values)
 	_refresh()
@@ -686,9 +530,28 @@ func _toggle_die(index: int) -> void:
 		return
 	if game.toggle_hold(index):
 		_release_focus()
+		if game.held[index]:
+			_die_rest_positions[index] = dice[index].position
+			dice[index].move_to(_held_position(index))
+		else:
+			dice[index].move_to(_free_position(index))
 		_play("select", -5.0)
 		_refresh()
 		_save_game()
+
+func _free_position(index: int) -> Vector3:
+	var candidates: Array[Vector3] = [_die_rest_positions[index]]
+	for z in [-1.5, 0.0, 1.5, 3.0]:
+		for x in [-3.6, -1.8, 0.0, 1.8, 3.6]:
+			candidates.append(Vector3(x, 0.505, z))
+	for candidate in candidates:
+		var clear := true
+		for other in range(5):
+			if other != index and not game.held[other] and candidate.distance_to(dice[other].position) < 1.25:
+				clear = false
+		if clear:
+			return candidate
+	return candidates[0]
 
 func _request_score(category: int) -> void:
 	if game == null or _rolling or is_instance_valid(dialog) or not game.can_score(category):
@@ -761,7 +624,7 @@ func _show_dialog(title: String, kicker: String, body: String, actions: Array, w
 	dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(dialog)
 	var shade := ColorRect.new()
-	shade.color = Color(0.02, 0.05, 0.055, 0.85)
+	shade.color = Color(0.12, 0.08, 0.035, 0.58)
 	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dialog.add_child(shade)
 	var center := CenterContainer.new()
@@ -769,17 +632,17 @@ func _show_dialog(title: String, kicker: String, body: String, actions: Array, w
 	dialog.add_child(center)
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size.x = width
-	panel.add_theme_stylebox_override("panel", _style(Color("142d2d"), Color("566b53"), 18))
+	panel.add_theme_stylebox_override("panel", _style(Color("faf9ed"), Color("c3c2b2"), 8))
 	center.add_child(panel)
 	var margin := _margin(32, 30, 32, 30)
 	panel.add_child(margin)
 	var box := _vbox(18)
 	margin.add_child(box)
-	box.add_child(_label(kicker, 11, GOLD, BOLD))
-	var title_label := _label(title, 29, CREAM, SERIF)
+	box.add_child(_label(kicker, 11, MUTED, BOLD))
+	var title_label := _label(title, 29, CREAM, BOLD)
 	title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(title_label)
-	var body_label := _label(body, 16, Color("c0cec3"))
+	var body_label := _label(body, 16, Color("545c56"))
 	body_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body_label.custom_minimum_size.x = width - 64
 	box.add_child(body_label)
@@ -804,7 +667,7 @@ func _clear_sidebar() -> void:
 		child.queue_free()
 
 func _sidebar_box(separation: int = 15) -> VBoxContainer:
-	var margin := _margin(22, 25, 22, 23)
+	var margin := _margin(12, 18, 12, 18)
 	sidebar.add_child(margin)
 	var box := _vbox(separation)
 	margin.add_child(box)
@@ -830,17 +693,16 @@ func _button(text: String, callback: Callable, primary: bool = false) -> Button:
 	return button
 
 func _style_button(button: Button, primary: bool) -> void:
-	var background := GOLD if primary else Color("19312f")
-	var border := GOLD if primary else Color("3c5149")
-	button.add_theme_stylebox_override("normal", _style(background, border, 8))
-	button.add_theme_stylebox_override("hover", _style(background.lightened(0.12), GOLD, 8))
-	button.add_theme_stylebox_override("pressed", _style(background.darkened(0.12), CREAM, 8))
-	button.add_theme_stylebox_override("disabled", _style(Color("1a2d2a"), Color("30423a"), 8))
-	button.add_theme_stylebox_override("focus", _style(Color.TRANSPARENT, CREAM, 8))
-	button.add_theme_color_override("font_color", Color("1b3029") if primary else CREAM)
-	button.add_theme_color_override("font_hover_color", Color("1b3029") if primary else CREAM)
-	button.add_theme_color_override("font_pressed_color", Color("1b3029") if primary else CREAM)
-	button.add_theme_color_override("font_disabled_color", Color("6c8176"))
+	var background: Color = GOLD if primary else Color("faf8ee")
+	var border: Color = Color("c5a33c") if primary else Color("c9c8ba")
+	button.add_theme_stylebox_override("normal", _style(background, border, 18))
+	button.add_theme_stylebox_override("hover", _style(Color("fff2b4"), Color("b89c45"), 18))
+	button.add_theme_stylebox_override("pressed", _style(Color("e6cc72"), Color("8f8048"), 18))
+	button.add_theme_stylebox_override("disabled", _style(Color("e0dfd2"), Color("babbb0"), 18))
+	button.add_theme_stylebox_override("focus", _style(Color.TRANSPARENT, Color("5f8aab"), 18))
+	for state in ["font_color", "font_hover_color", "font_pressed_color"]:
+		button.add_theme_color_override(state, CREAM)
+	button.add_theme_color_override("font_disabled_color", Color("9b9e93"))
 
 func _style(background: Color, border: Color, radius: int) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
@@ -874,7 +736,7 @@ func _spacer() -> Control:
 func _separator() -> HSeparator:
 	var separator := HSeparator.new()
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color("30463f")
+	style.bg_color = Color("c6c8bb")
 	style.content_margin_top = 1
 	separator.add_theme_stylebox_override("separator", style)
 	return separator
@@ -907,7 +769,7 @@ func _on_die_collision(_body: Node, die: GeneralaDie) -> void:
 
 func _toggle_sound() -> void:
 	muted = not muted
-	sound_button.text = "SILENCIADO" if muted else "SONIDO ON"
+	sound_button.text = "M  Sin sonido" if muted else "M  Sonido"
 	if muted:
 		for player: AudioStreamPlayer in audio.values():
 			player.stop()

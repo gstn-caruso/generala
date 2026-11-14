@@ -9,6 +9,8 @@ const MODEL_SCALE: float = 1.0 / 0.75
 const FACE_NORMALS: Array[Vector3] = [Vector3.DOWN, Vector3.RIGHT, Vector3.BACK, Vector3.FORWARD, Vector3.LEFT, Vector3.UP]
 
 var die_index: int = 0
+var _visual: Node3D
+var _movement_tween: Tween
 
 func _ready() -> void:
 	mass = 0.7
@@ -30,10 +32,23 @@ func _ready() -> void:
 	box.size = Vector3.ONE * 0.98
 	collision.shape = box
 	add_child(collision)
-	var visual := MODEL.instantiate() as Node3D
-	visual.name = "KayKitD6"
-	visual.scale = Vector3.ONE * MODEL_SCALE
-	add_child(visual)
+	_visual = MODEL.instantiate() as Node3D
+	_visual.name = "KayKitD6"
+	_visual.scale = Vector3.ONE * MODEL_SCALE
+	add_child(_visual)
+
+func move_to(location: Vector3) -> void:
+	var previous := global_position
+	_reset_visual()
+	position = location
+	_visual.position = global_basis.inverse() * (previous - global_position)
+	_movement_tween = create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_movement_tween.tween_property(_visual, "position", Vector3.ZERO, 0.22)
+
+func _reset_visual() -> void:
+	if is_instance_valid(_movement_tween):
+		_movement_tween.kill()
+	_visual.position = Vector3.ZERO
 
 func top_value() -> int:
 	var highest: float = -2.0
@@ -49,12 +64,14 @@ func top_alignment() -> float:
 	return (global_basis * FACE_NORMALS[top_value() - 1]).dot(Vector3.UP)
 
 func show_value(value: int, yaw: float = 0.0) -> void:
+	_reset_visual()
 	freeze = true
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	quaternion = Quaternion(Vector3.UP, yaw) * Quaternion(FACE_NORMALS[clampi(value, 1, 6) - 1], Vector3.UP)
 
 func toss(origin: Vector3) -> void:
+	_reset_visual()
 	freeze = true
 	position = origin
 	# Uniform random orientation (Shoemake), independent of Euler angles.

@@ -6,16 +6,16 @@
 
 Licencia **Creative Commons Zero (CC0)**. La licencia original se conserva en [assets/kaykit/License.txt](assets/kaykit/License.txt).
 
-Modelos utilizados del pack aportado:
+Modelos y recursos incluidos del pack aportado:
 
 - `D6_B`: los cinco dados jugables, con sus puntos y material originales.
-- `container_B`: la bandeja de la mesa, escalada para alojar los dados.
-- `token_green`, `token_yellow`, `token_red`, `token_blue`: fichas en el borde de la bandeja.
-- `coin_gold`, `coin_silver`: monedas decorativas.
-- `hourglass`: reloj de arena decorativo, sin límite de tiempo para jugar.
+- `container_B`: la bandeja de la mesa, escalada y con material metálico aplicado en Godot.
+- `token_green`, `token_yellow`, `token_red`, `token_blue`: fichas disponibles del pack.
+- `coin_gold`, `coin_silver`: monedas disponibles del pack.
+- `hourglass`: reloj de arena disponible del pack.
 - `boardgame_bits_texture.png`: textura compartida de los modelos.
 
-Los archivos glTF y sus buffers se copiaron del pack sin modificar su contenido. La escala y la colocación se aplican en Godot. El paño verde es un material procedural del juego.
+Los archivos glTF y sus buffers se copiaron del pack sin modificar su contenido. La escala, la colocación y los materiales adicionales se aplican en Godot. El paño rojo, la madera, el cubilete y el lápiz se generan por código en el juego.
 
 ## Tipografías y audio
 
